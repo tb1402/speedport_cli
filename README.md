@@ -4,4 +4,4 @@ Commanline Interface for the Speedport W724V Type A (a router/modem from Telekom
 At the moment it supports only some options.
 
 Use any python3.7 commandline to execute.
-# Package requests must be installed
+**Package requests must be installed
