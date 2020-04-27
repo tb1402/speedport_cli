@@ -2,6 +2,7 @@ import requests
 import hashlib
 import json
 import argparse
+from argparse import RawTextHelpFormatter
 
 class bcol:
     red='\33[91m'
@@ -43,7 +44,7 @@ def login(password):
         "showpw":"0",
         "challengev":chal
     }
-    lr=requests.post(url=url+"/data/Login.json",headers=headers,proxies=p,data=data,verify=False,allow_redirects=True)
+    lr=requests.post(url=url+"/data/Login.json",headers=headers,data=data,verify=False,allow_redirects=True)
     return lr.cookies
 
 def getCsrf(session_c):
@@ -137,7 +138,7 @@ def addPortForward(pport,privp,protocol,ip,session_c,csrf):
     global purl
     global p
     global url
-    pr=requests.get(url=url+"/data/Portforwarding.json",headers=headers,proxies=p,cookies=session_c,verify=False,allow_redirects=True)
+    pr=requests.get(url=url+"/data/Portforwarding.json",headers=headers,cookies=session_c,verify=False,allow_redirects=True)
     jst=json.loads(pr.text)
     id="no"
     for x in range(0, len(jst)):
@@ -390,8 +391,66 @@ def setWifiState(state,session_c,csrf):
         elif state == "1":
             print(bcol.red + "[-] Error! Wifi can't be enabled!" + bcol.reset)
 
-def mainn():
-    p=argparse.ArgumentParser(description="Speedport W 724V Type A - cmd configuration by Tobias Bittner (C) 2019\t"+bcol.red+"\nIf you use this tool every session logged into the router will be closed!"+bcol.dblue+"\nNew features available soon!"+bcol.reset)
+def setWifiAcessLimit(session_c,dev_mac,csrf,disable):
+    global headers
+    global purl
+    global p
+    global url
+    re=requests.get(url=url + "/data/WLANAccess.json", headers=headers, cookies=session_c, verify=False, allow_redirects=True)
+    pos=re.text.rfind("\"varid\":\"mdevice_name_configing\",")
+    sec=False
+    for x in range(pos,0,-1):
+        print(re.text[x])
+        if re.text[x:x+1]=="}":
+            if re.text[x+1:x+2]==",":
+                if sec:
+                    pos=x+1
+                    break
+                sec=True
+    try:
+        js=json.loads(re.text[0:pos]+re.text[pos+1:])
+    except json.JSONDecodeError as e:
+        print(re.text[8534:]+"\n"+str(e))
+    dev=[]
+    for x in range(0,len(js)):
+        if js[x]["varid"]=="wlan_addmdevice":
+            dev.append([js[x]["varvalue"][0]["varvalue"],js[x]["varvalue"][2]["varvalue"]])
+    print(dev)
+    found=False
+    if not disable:
+        for device in dev:
+            if device[1]==dev_mac:
+                found=True
+                break
+    if found or disable:
+        data={
+           "csrf_token": csrf,
+        }
+        if disable:
+            data["wlan_allow_all"] = 0
+            for x in range(0,len(dev)):
+                data["sid[" + str(x + 1) + "]"] = dev[x][0]
+        else:
+            data["wlan_allow_all"] =1
+            for x in range(0,len(dev)):
+                if dev[x][1]==dev_mac:
+                    data["mdevice_name["+str(x+1)+"1]"]=0
+                else:
+                    data["mdevice_name[" + str(x + 1) + "1]"] = 1
+                data["sid[" + str(x + 1) + "1]"] = dev[x][0]
+        re=requests.post(url=url + "/data/WLANAccess.json", headers=headers, cookies=session_c, data=data, verify=False, allow_redirects=True)
+        if json.loads(re.text)[0]["varvalue"]=="ok":
+            if disable:
+                print(bcol.lgreen + "[+] Access limit deactivated!" + bcol.reset)
+            else:
+                print(bcol.lgreen+"[+] Device succesfully blocked!"+bcol.reset)
+        else:
+            print(bcol.red + "[-] Something went wrong!" + bcol.reset)
+    else:
+        print(bcol.red+"[-] Specified Mac address not found in device list!"+bcol.reset)
+
+def main():
+    p=argparse.ArgumentParser(description="Speedport W 724V Type A - cmd configuration by Tobias Bittner (C) 2019/20\t"+bcol.red+"\nIf you use this tool every session logged into the router will be closed!"+bcol.dblue+"\nNew features available soon!"+bcol.reset,formatter_class=RawTextHelpFormatter)
     p.add_argument('-version',action="version",version='0.0.2 pre-alpha')
     p.add_argument('-pw',default=argparse.SUPPRESS,help="Sets your Speedport password to use this tool.",metavar="speedport_password",nargs=1,required=True)
     p.add_argument('-abl',default=argparse.SUPPRESS,help="Adds an internet blocker for a device",metavar=("blocker_name", "ip_of_device"),nargs=2)
@@ -401,6 +460,8 @@ def mainn():
     p.add_argument('-lpr', default=argparse.SUPPRESS, help="Lists all port redirect rules", action="store_false")
     p.add_argument('-enw', default=argparse.SUPPRESS, help="Enables Wifi (2.4 and 5 GHz)", action="store_false")
     p.add_argument('-diw', default=argparse.SUPPRESS, help="Disables Wifi (2.4 and 5 GHz)", action="store_false")
+    p.add_argument('-wial', default=argparse.SUPPRESS, help="wial e 00:00:00:00:00:00 to enable (e) Wifi access limit and exclude device with given mac address from the wifi network\n"
+                                                            "wial d type_sth_random to disable wifi access limit", metavar="device_mac", nargs=2)
     args=p.parse_args()
 
     if hasattr(args,"pw"):
@@ -449,11 +510,20 @@ def mainn():
             csrf = getCsrf(session)
             print("Csrf Token: " + csrf)
             setWifiState("0",session,csrf)
+        elif hasattr(args, "wial"):
+            session = login(pw)
+            csrf = getCsrf(session)
+            print("Csrf Token: " + csrf)
+            if args.wial[0]=="e":
+                setWifiAcessLimit(session,args.wial[1].upper(),csrf,False)
+            elif args.wial[0]=="d":
+                setWifiAcessLimit(session, "not", csrf,True)
+
     else:
         print(bcol.red + "[-]Set a password!" + bcol.reset)
 
 
-def main():
+def mainn():
     session = login("842wlan321")
     csrf = getCsrf(session)
     print("Csrf Token: " + csrf)
